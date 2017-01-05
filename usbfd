@@ -1,7 +1,7 @@
 #!/bin/bash
 # usbfd; A utility script to manage multiple floppy images on a single USB stick
 # Tested on a GOTEK 1000 floppy model
-# v. 0.91 Dennis Meulensteen 2013 dennis@meulensteen.nl -
+# v. 0.92 Dennis Meulensteen 2013 dennis@meulensteen.nl -
 # This is unsupported software because I don't have the time to provide support
 #
 #This program is free software: you can redistribute it and/or modify
@@ -30,12 +30,13 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 #handle the options first
-while getopts  "fmuUld:o:" flag; do
+while getopts  "cfmuUld:o:i:" flag; do
 
 #  echo "$flag" $OPTIND $OPTARG
 
 #in order of ascending innocence so innocent options override dangerous ones if someone decides to throw the alphabet at us
   case "$flag" in 
+  c) TASK="Dump";;
   f) TASK="Format";;
   m) TASK="Mount";;
   u) TASK="UnMount";;
@@ -44,20 +45,28 @@ while getopts  "fmuUld:o:" flag; do
   d) DEVICE=$OPTARG
      DEVICEDEFAULT=0
   ;;
+  i) IMG_FILE=$OPTARG;;
   o) OFFSET=$OPTARG;;
 
   ?)
     echo "Invalid Option.Usage: usbfd -[OPTIONS] [OPERANDS]"
     echo "Valid Options are:"
-    echo "  -m to mount one or many images "
+    echo "  -c copy (dump) one floppy image file to the specified slot (for a minimum of security you must also provide -d [DEVICE])"
+    echo "  -f format one or more floppy images (for a minimum of security you must also provide -d [DEVICE])"
+    echo "  -l to list mounted images"
+    echo "  -m to mount one or many images"
+    echo "    up to $(ls -1 /dev/loop? | wc -l) floppy images can be mounted."
     echo "  -u to unmount one or many images"
     echo "    if -m or u are used you must provide at least one number between 0 and 999 to mount the respective image(s)."
     echo "  -U to unmount all mounted images at once"
-    echo "  -o NUMBER Provides an offset that corresponds to the distance between the images in bytes (1572864)"
-    echo "  -d DEVICE to set the device your USB stick is at (/dev/sdb)"
-    echo "  -f format one or more floppy images (for a minimum of security you must also provide -d [DEVICE])"
+    echo
+    echo "  -d DEVICE to set the device your USB stick is at ($DEVICE)"
+    echo "    the choices are "$(ls /dev/sd?)
+    echo "  -i IMAGE_FILE fdd image file (.img) to dump using the -c option."
+    echo "  -o NUMBER Provides an offset that corresponds to the distance between the images in bytes ($OFFSET)"
+    echo
     echo "OPERANDS are one or many space seperated whole numers or ranges {N..M} corresponding to images on your USB stick"
-    echo "  example of mounting: #usbfd -md /dev/sdd {0..9} 12 18"
+    echo "  example of mounting: #usbfd -md $DEVICE {0..9} 12 18"
     echo "    {N..M} indicates a range of floppy images to operate on, -f and -u also take ranges."
   ;;
 
@@ -66,6 +75,7 @@ while getopts  "fmuUld:o:" flag; do
   ;;
   esac
 done
+
 #gets rid of all the complicated switches and their parameters, leaving just the arguments
 shift $(($OPTIND - 1))
 
@@ -89,7 +99,7 @@ shift $(($OPTIND - 1))
 	    echo "usbfd$FLOP is already mounted, try -u first"
 	  else 
 	    mkfs.msdos -vC $FNAME -n FDISK$FLOP 1440|grep volume #using mkfs repeatedly because of the random volume ids and labels
-	    let MYOFFSET=$OFFSET/512*$NUM
+	    let MYOFFSET=$OFFSET/512*10#$NUM
 	    err=$(dd if=$FNAME of=$DEVICE seek=$MYOFFSET bs=512c count=36 conv=noerror &> /dev/null) || echo "Format failed on disk $FLOP" #only copy what we need
 	    rm $FNAME
 	fi
@@ -107,9 +117,23 @@ shift $(($OPTIND - 1))
 	   echo "usbfd$FLOP is already mounted, try -u first"
 	  else
 	    mkdir /media/usbfd$FLOP
-	    let MYOFFSET=$OFFSET*$NUM
-	    mount -o loop,offset=$MYOFFSET,users,rw,umask=000 $DEVICE /media/usbfd$FLOP || rmdir /media/usbfd$FLOP 
+	    let MYOFFSET=$OFFSET*10#$NUM
+	    mount -o loop,offset=$MYOFFSET,users,rw,umask=000 $DEVICE /media/usbfd$FLOP || rmdir /media/usbfd$FLOP
 	fi
+    done
+  ;;
+
+  # copy image
+  "Dump")
+    if [ $DEVICEDEFAULT == 1 ]
+    then
+      echo "Copying is dangerous! You must explicitly provide a device (-d)"
+      exit -1
+    fi
+    for NUM in "$@"
+    do
+            let MYOFFSET=$OFFSET*10#$NUM
+            dd if=$IMG_FILE ibs=1 obs=1 seek=$MYOFFSET count=$OFFSET of=$DEVICE
     done
   ;;
 
@@ -153,6 +177,4 @@ shift $(($OPTIND - 1))
   ;;
 
 
-  esac
-
-
+esac
